@@ -1,6 +1,7 @@
 
 # AI Resume Ranker
-<img width="1727" alt="Screenshot 2025-05-21 at 6 39 24 PM" src="https://github.com/user-attachments/assets/957e4b0c-8932-4a73-bbc5-d79e49437cdf" />
+<img width="1440" height="900" alt="Screenshot 2026-04-17 at 2 53 40 AM" src="https://github.com/user-attachments/assets/f1d0639c-471e-4225-bacb-b54f90a7e27c" />
+
 
 ## Overview
 The AI Resume Ranker is a full-stack application designed to help recruiters and job seekers efficiently evaluate resumes against job descriptions using AI-powered scoring and ranking.
