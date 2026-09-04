@@ -1,5 +1,5 @@
 
-# AI Resume Ranker
+# SkillQuest - AI Resume Reviewer + Ranker
 <img width="1440" height="900" alt="Screenshot 2026-04-17 at 2 53 40 AM" src="https://github.com/user-attachments/assets/f1d0639c-471e-4225-bacb-b54f90a7e27c" />
 
 
