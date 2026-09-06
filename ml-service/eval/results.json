@@ -1,0 +1,20 @@
+{
+  "injection": {
+    "accuracy": 1.0,
+    "details": [
+      {
+        "id": "injection-basic",
+        "expected": true,
+        "flagged": true,
+        "ok": true
+      },
+      {
+        "id": "clean-control",
+        "expected": false,
+        "flagged": false,
+        "ok": true
+      }
+    ]
+  },
+  "ranking": null
+}
