@@ -50,7 +50,15 @@ The backend service will start (default port 8080).
 2. Create a Python virtual environment: python3 -m venv venv
 3. Activate the virtual environment: source venv/bin/activate
 4. Install the required Python packages: pip install -r requirements.txt
-5. Start the ML service: uvicorn main:app --reload
+5. Create a `.env` file in `ml-service/` with your OpenAI credentials (this file is git-ignored):
+   ```
+   OPENAI_API_KEY=sk-...
+   # optional overrides (defaults shown):
+   # SKILLQUEST_LLM_MODEL=gpt-5.6-luna
+   # SKILLQUEST_EMBED_MODEL=text-embedding-3-small
+   # SKILLQUEST_MATCH_THRESHOLD=0.62
+   ```
+6. Start the ML service: uvicorn main:app --reload
 
 The ML service will start at `http://127.0.0.1:8000`.
 
