@@ -200,3 +200,41 @@
     padding: 0.4rem 0.6rem;
   }
 }
+
+/* --- Guardrail flag (prompt-injection caution) --- */
+.guardrail-flag {
+  position: relative;
+  display: inline-block;
+  margin-left: 0.4rem;
+  color: #e00000;
+  font-size: 1rem;
+  cursor: help;
+  line-height: 1;
+}
+
+.guardrail-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  top: 140%;
+  left: 0;
+  z-index: 50;
+  width: 220px;
+  background: #fff;
+  color: #333;
+  border: 2px solid #e00000;
+  box-shadow: 4px 4px 0 #e00000;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  line-height: 1.7;
+  text-transform: none;
+  transition: opacity 0.15s ease;
+}
+
+.guardrail-flag:hover .guardrail-tooltip,
+.guardrail-flag:focus .guardrail-tooltip {
+  visibility: visible;
+  opacity: 1;
+}

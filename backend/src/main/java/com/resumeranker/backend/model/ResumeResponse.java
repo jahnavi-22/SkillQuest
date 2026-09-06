@@ -35,4 +35,8 @@ public class ResumeResponse {
     private double atsCompatibilityScore;
 
     private Map<String, String> contact;
+
+    private Map<String, Object> verification;
+
+    private List<Map<String, Object>> scoreBreakdown;
 }

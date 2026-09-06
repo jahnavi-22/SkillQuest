@@ -12,7 +12,10 @@ It consists of three main components:
   This REST API service manages core application logic, including receiving resume files and job descriptions, parsing content, communicating with the ML service for scoring, and returning ranked results to the frontend.
 
 - **ML Service (Python FastAPI):**  
-  This microservice leverages advanced natural language processing and machine learning techniques to analyze the textual content of resumes and job descriptions. It extracts relevant keywords, computes similarity scores, and ranks the resumes based on their match to the job requirements.
+  An **orchestrator + specialized sub-agents** pipeline that evaluates each resume against the job
+  description. Instead of one large LLM prompt, the work is split into focused, independently testable
+  steps, and the scoring math is moved out of the LLM into **deterministic embedding-based matching** so
+  scores are reproducible and auditable. See [ML Service Architecture](#ml-service-architecture).
 
 - **Frontend (React.js):**  
   A user-friendly web interface that allows users to upload resumes and job descriptions, view ranked results, and get detailed feedback on skills matched or missing in the resumes.
@@ -47,7 +50,7 @@ The backend service will start (default port 8080).
 2. Create a Python virtual environment: python3 -m venv venv
 3. Activate the virtual environment: source venv/bin/activate
 4. Install the required Python packages: pip install -r requirements.txt
-5. Start the ML service: uvicorn app.main:app --reload
+5. Start the ML service: uvicorn main:app --reload
 
 The ML service will start at `http://127.0.0.1:8000`.
 
@@ -64,3 +67,67 @@ The React app will run at http://localhost:3000.
 ---
 
 
+
+---
+
+## ML Service Architecture
+
+The ML service is an **orchestrator that delegates to specialized sub-agents**, rather than a single
+mega-prompt. Each resume flows through four focused steps; the JD is parsed once and reused.
+
+```
+Job Description ──► Extractor (JD)  ─────────────► required skills, tagged must-have / nice-to-have
+                                                            │
+   each resume (run concurrently):                          ▼
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │  Extractor (resume)  ─► normalized skills + structured data (LLM)          │
+   │  Matcher             ─► embedding cosine similarity → score (NO LLM)       │
+   │  Assessor            ─► seniority / trajectory / ATS / highlights (LLM)    │
+   │  Verifier            ─► hallucinated-skill check + prompt-injection screen │
+   └──────────────────────────────────────────────────────────────────────────┘
+                                                            │
+                                                            ▼
+                                   Orchestrator assembles + ranks by score
+```
+
+### Components (`ml-service/`)
+- `llm.py` — single model abstraction. Default model **GPT-5.6 Luna** (cheapest/fastest OpenAI tier,
+  built for high-volume well-defined work); swappable via `SKILLQUEST_LLM_MODEL`. Uses native JSON mode.
+- `embeddings.py` — **`text-embedding-3-small`** + cosine helpers. No local torch/sentence-transformers,
+  so the service stays lightweight to deploy.
+- `agents/extractor.py` — turns resume/JD text into clean, **normalized** skill lists.
+- `agents/matcher.py` — **deterministic** scoring: for each JD skill, best cosine similarity to any
+  resume skill; overall score is the importance-weighted mean (must-have = 1.0, nice-to-have = 0.5).
+- `agents/assessor.py` — qualitative reads that embeddings can't do.
+- `agents/verifier.py` — guardrail: flags skills unsupported by the resume text, and screens resume
+  text for prompt-injection attempts (resumes are untrusted input).
+- `orchestrator.py` — coordinates the sub-agents, caches per `(jd, resume)`, ranks results.
+
+### Key design decisions
+- **Scoring math lives in embeddings, not the LLM.** The score is reproducible, auditable, and not
+  manipulable by instructions embedded in a resume. Every score ships with a per-skill `scoreBreakdown`
+  (which resume skill matched each JD skill, at what similarity) for explainability.
+- **Why not KeyBERT?** An earlier version used KeyBERT + RAKE for unsupervised keyword extraction. It
+  surfaced noise, never normalized synonyms (React.js / ReactJS / React), and used a brittle hard
+  similarity threshold. The current design lets the LLM do *extraction* (which it's good at) and uses
+  soft, importance-weighted embedding similarity for *matching* (reproducible, no arbitrary cutoff).
+- **Guardrail by default.** Prompt-injection screening + hallucinated-skill checks run on every resume.
+
+### Eval harness (`ml-service/eval/`)
+Because "it feels right" is not a quality bar, the pipeline ships with an eval:
+
+```bash
+cd ml-service
+python eval/metrics.py     # offline unit tests of the metric math (no API key)
+python eval/run_eval.py    # full eval over eval/dataset.json (needs OPENAI_API_KEY)
+```
+
+It reports, against a labeled dataset:
+- **Ranking quality** — Kendall's tau + NDCG vs. human gold rankings
+- **Skill matching** — precision / recall / F1 vs. expected skills
+- **Score stability** — std-dev of a resume's score across repeated runs
+- **Guardrail** — prompt-injection detection accuracy (runs offline)
+
+Add your own labeled cases to `eval/dataset.json` to calibrate the match threshold and compare models.
+
+> The pre-refactor single-prompt implementation is kept at `ml-service/extractor.py` for reference.

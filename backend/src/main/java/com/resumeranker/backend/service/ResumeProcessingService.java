@@ -47,7 +47,7 @@ public class ResumeProcessingService {
             }
         }
 
-        ////in case of resume urls
+        //in case of resume urls
         if(request.getResumeUrls() != null){
             for(String url : request.getResumeUrls()){
                 try(InputStream stream = FileDownloaderUtil.downloadFile(url)){

@@ -72,7 +72,23 @@ const ResumeCard = ({ result }) => {
       <div className="card-header">
         <div className="header-grid">
           <span className="rank">#{result.rank}</span>
-          <span className="name">{result.name}</span>
+          <span className="name">
+            {result.name}
+            {result.verification?.injectionFlags?.length > 0 && (
+              <span
+                className="guardrail-flag"
+                tabIndex={0}
+                title="Prompt injection detected — this resume tried to manipulate the AI's scoring. The attempt was ignored; the score reflects real skills only."
+              >
+                &#9888;
+                <span className="guardrail-tooltip">
+                  Prompt injection detected. This resume tried to manipulate the
+                  AI's scoring. The attempt was ignored — the score reflects real
+                  skills only.
+                </span>
+              </span>
+            )}
+          </span>
           <div className="skills-column">
             {result.matchedSkills?.map((skill, idx) => (
               <span key={idx} className="skill-tag matched">{skill}</span>
