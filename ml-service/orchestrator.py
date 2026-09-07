@@ -42,6 +42,14 @@ def _key(*parts: str) -> str:
     return hashlib.sha256("::".join(p.strip() for p in parts).encode("utf-8")).hexdigest()
 
 
+async def _timed(label: str, tag: str, coro):
+    """Await a coroutine and log how long it took. For latency profiling."""
+    t0 = time.time()
+    result = await coro
+    logger.info("%s timing: %s took %.2fs", tag, label, time.time() - t0)
+    return result
+
+
 async def rank_resumes(
     jd_text: str,
     resume_texts: List[str],
@@ -53,14 +61,18 @@ async def rank_resumes(
     started = time.time()
     logger.info("job=%s start: %d resume(s)", job_id, len(resume_texts))
 
-    jd_skills = await _extract_jd_cached(jd_text)
-    logger.info("job=%s JD parsed: %d required skills", job_id, len(jd_skills))
+    jd_task = asyncio.create_task(
+        _timed("extract_jd", f"job={job_id}", _extract_jd_cached(jd_text))
+    )
 
     tasks = [
-        _process_one(jd_text, jd_skills, text, resume_names[i] if i < len(resume_names) else None, job_id)
+        _process_one(jd_text, jd_task, text, resume_names[i] if i < len(resume_names) else None, job_id)
         for i, text in enumerate(resume_texts)
     ]
     results = await asyncio.gather(*tasks)
+
+    jd_skills = await jd_task
+    logger.info("job=%s JD parsed: %d required skills", job_id, len(jd_skills))
 
     ranked = sorted(results, key=lambda r: r["score"], reverse=True)
     total = len(ranked)
@@ -88,7 +100,7 @@ async def _extract_jd_cached(jd_text: str) -> List[Dict[str, str]]:
 
 async def _process_one(
     jd_text: str,
-    jd_skills: List[Dict[str, str]],
+    jd_task: "asyncio.Task",
     resume_text: str,
     name_hint: Optional[str],
     job_id: Optional[str] = None,
@@ -105,17 +117,21 @@ async def _process_one(
         logger.info("%s cache hit", tag)
         return result
 
-    resume = await extractor.extract_resume(resume_text)
+    resume = await _timed("extract_resume", tag, extractor.extract_resume(resume_text))
     resume_skills = resume.get("skills", [])
     logger.info("%s extracted %d skills", tag, len(resume_skills))
 
+    jd_skills = await jd_task
+
     # Matcher (embeddings) and assessor (LLM) are independent -> run concurrently.
-    match_task = asyncio.create_task(matcher.match_skills(resume_skills, jd_skills))
-    assess_task = asyncio.create_task(assessor.assess(resume, jd_text))
+    match_task = asyncio.create_task(_timed("match_skills", tag, matcher.match_skills(resume_skills, jd_skills)))
+    assess_task = asyncio.create_task(_timed("assess", tag, assessor.assess(resume, jd_text)))
     match_res, assess_res = await asyncio.gather(match_task, assess_task)
     logger.info("%s matched + assessed (score=%.2f)", tag, match_res["score"])
 
+    _verify_t0 = time.time()
     verification = verifier.verify(resume_skills, resume_text)
+    logger.info("%s timing: verify took %.2fs", tag, time.time() - _verify_t0)
     if verification["injectionFlags"]:
         logger.info("%s prompt-injection flagged", tag)
 
