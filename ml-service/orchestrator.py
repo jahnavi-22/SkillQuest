@@ -17,11 +17,22 @@ requests are cheap. The score is deterministic, so caching is safe.
 
 import asyncio
 import hashlib
+import logging
+import sys
+import time
 from typing import Any, Dict, List, Optional
 
 from cachetools import LRUCache
 
 from agents import assessor, extractor, matcher, verifier
+
+logger = logging.getLogger("skillquest")
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("%(asctime)s [skillquest] %(message)s"))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 _cache: LRUCache = LRUCache(maxsize=500)
 _jd_cache: LRUCache = LRUCache(maxsize=100)
@@ -35,13 +46,18 @@ async def rank_resumes(
     jd_text: str,
     resume_texts: List[str],
     resume_names: Optional[List[str]] = None,
+    job_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Run the full pipeline over all resumes and return them ranked (best first)."""
     resume_names = resume_names or [None] * len(resume_texts)
+    started = time.time()
+    logger.info("job=%s start: %d resume(s)", job_id, len(resume_texts))
+
     jd_skills = await _extract_jd_cached(jd_text)
+    logger.info("job=%s JD parsed: %d required skills", job_id, len(jd_skills))
 
     tasks = [
-        _process_one(jd_text, jd_skills, text, resume_names[i] if i < len(resume_names) else None)
+        _process_one(jd_text, jd_skills, text, resume_names[i] if i < len(resume_names) else None, job_id)
         for i, text in enumerate(resume_texts)
     ]
     results = await asyncio.gather(*tasks)
@@ -55,6 +71,8 @@ async def rank_resumes(
         r["topScores"] = top_scores
         if not r.get("name"):
             r["name"] = f"Resume {rank}"
+
+    logger.info("job=%s done: ranked %d resume(s) in %.2fs", job_id, total, time.time() - started)
     return ranked
 
 
@@ -73,23 +91,33 @@ async def _process_one(
     jd_skills: List[Dict[str, str]],
     resume_text: str,
     name_hint: Optional[str],
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    label = name_hint or "resume"
+    tag = f"job={job_id} resume={label}"
+    started = time.time()
+
     cache_key = _key("resume", jd_text, resume_text)
     if cache_key in _cache:
         result = dict(_cache[cache_key])
         if name_hint and not result.get("name"):
             result["name"] = name_hint
+        logger.info("%s cache hit", tag)
         return result
 
     resume = await extractor.extract_resume(resume_text)
     resume_skills = resume.get("skills", [])
+    logger.info("%s extracted %d skills", tag, len(resume_skills))
 
     # Matcher (embeddings) and assessor (LLM) are independent -> run concurrently.
     match_task = asyncio.create_task(matcher.match_skills(resume_skills, jd_skills))
     assess_task = asyncio.create_task(assessor.assess(resume, jd_text))
     match_res, assess_res = await asyncio.gather(match_task, assess_task)
+    logger.info("%s matched + assessed (score=%.2f)", tag, match_res["score"])
 
     verification = verifier.verify(resume_skills, resume_text)
+    if verification["injectionFlags"]:
+        logger.info("%s prompt-injection flagged", tag)
 
     result: Dict[str, Any] = {
         "name": resume.get("name") or name_hint or "",
@@ -114,6 +142,7 @@ async def _process_one(
         "verification": verification,
     }
     _cache[cache_key] = result
+    logger.info("%s done (score=%.2f, %.2fs)", tag, match_res["score"], time.time() - started)
     return result
 
 

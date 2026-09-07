@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from typing import List
 from model import ResumeRequest, ResumeResponse
 import orchestrator
+import openai
 import time
 
 app = FastAPI()
@@ -25,7 +26,23 @@ async def rank_resumes(request: ResumeRequest):
     start_time = time.time()
 
     # Orchestrator runs extract -> match -> assess -> verify per resume and ranks.
-    ranked = await orchestrator.rank_resumes(jd, resumes, request.resumeNames)
+    try:
+        ranked = await orchestrator.rank_resumes(jd, resumes, request.resumeNames, request.jobId)
+    except openai.APIStatusError as e:
+        # OpenAI returned an HTTP error (400 bad param, 429 rate limit, etc.).
+        # Surface its real status code + message instead of a blank 500.
+        message = str(e)
+        try:
+            if isinstance(e.body, dict):
+                message = e.body.get("error", {}).get("message", message)
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.status_code, detail=f"OpenAI {e.status_code}: {message}")
+    except openai.APIError as e:
+        # Connection/timeout errors from OpenAI (no HTTP status).
+        raise HTTPException(status_code=502, detail=f"OpenAI API error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
     responses = [
         ResumeResponse(
