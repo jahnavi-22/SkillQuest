@@ -65,8 +65,7 @@ async def complete(
     resp = await client.chat.completions.create(
         model=model or DEFAULT_LLM_MODEL,
         messages=_build_messages(prompt, system),
-        temperature=temperature,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
     )
     return resp.choices[0].message.content or ""
 
@@ -93,8 +92,7 @@ async def complete_json(
         resp = await client.chat.completions.create(
             model=model_name,
             messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
         content = resp.choices[0].message.content or "{}"
@@ -103,8 +101,7 @@ async def complete_json(
         resp = await client.chat.completions.create(
             model=model_name,
             messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
         )
         content = resp.choices[0].message.content or "{}"
 
